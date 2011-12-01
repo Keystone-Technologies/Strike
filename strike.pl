@@ -20,16 +20,16 @@ if ( $ENV{GATEWAY_INTERFACE} ) {
 		chomp($_ = ((grep { /\b$pin$/ } getusers('/etc/strike/users'))[0]) || $pin);
 		#$ENV{NOBUZZ} = 1;
 		Strike($_);
-        	viewlog(1);
+		viewlog(1);
 	} elsif ( param('frontdoorlog') ) {
-	        viewlog(param('frontdoorlog'));
+		viewlog(param('frontdoorlog'));
 	} else {
-        	print start_html('Door Access!');
-	        print h1(a({-href=>"?frontdoorlog=20"}, 'Door Access!'));
-        	print start_form;
-	        print 'For whom? ', textfield('note'), br, 'PIN: ', password_field('pin'), br, submit('frontdoor', 'Open Front Door');
-        	print end_form;
-	        print end_html;
+		print start_html('Door Access!');
+		print h1(a({-href=>"?frontdoorlog=20"}, 'Door Access!'));
+		print start_form;
+		print 'For whom? ', textfield('note'), br, 'PIN: ', password_field('pin'), br, submit('frontdoor', 'Open Front Door');
+		print end_form;
+		print end_html;
 	}
 } else {
 	if ( $ENV{PIN} ) {
@@ -86,11 +86,11 @@ sub getusers {
 }
 
 sub viewlog {
-        open LOG, '/var/log/strike.log';
-        my @log = map { s/\s+[210]\s+.*//; $_ } <LOG>;
-        close LOG;
-        my $start = $#log-$_[0]+1;
-        $start = 0 if $start < 0;
-        print "Last $_[0] entries", br, br;
-        print join br, @log[$start..$#log];
+	open LOG, '/var/log/strike.log';
+	my @log = <LOG>;
+	close LOG;
+	my $start = $#log-$_[0]+1;
+	$start = 0 if $start < 0;
+	print "Last $_[0] entries", br, br;
+	print join br, @log[$start..$#log];
 }
