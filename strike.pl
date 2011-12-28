@@ -53,18 +53,25 @@ sub Strike {
 	if ( /^(.*?)\s+([210])\t(\d+)\t([^\t]+)\t?(\d{4}?)/ ) {
 		($name, $ok, $label, $rfid, $pin) = ($1, $2, $3, $4, $5);
 	} else {
-		($name, $ok) = ($ENV{RFID}||$ENV{PIN}||param('pin'), -1);
+		#($name, $ok) = ($ENV{RFID}||$ENV{PIN}||param('pin'), -1);
+		($name, $ok) = ("Wrong PIN ($ENV{RFID})", -1);
 	}
+
+	Date_Init('WorkDayBeg = 07:00', 'WorkDayEnd = 17:00');
 
 	local $_ = join "\t", grep { $_ } scalar localtime, $name.(param('note')?' ('.param('note').')':''), $ENV{REMOTE_ADDR};
 	print unless $ENV{GATEWAY_INTERFACE};
 	my $log = 1;
 	open DATA, ">>/var/log/strike.log" or $log = 0;
 	if ( $ENV{PIN} && $pin && $ENV{PIN} ne $pin ) {
-		print DATA "Wrong PIN: $_\n" if $log;
+		print DATA "Wrong PIN ($ENV{RFID}): $_\n" if $log;
 	} elsif ( $ok == 1 || ($ok == 2 && Date_IsWorkDay(ParseDate('now'), 1)) ) {  # 8a-5p
 		# use LWP
-		qx{curl http://172.16.254.2/state.xml?relayState=2 2>/dev/null} unless $ENV{NOBUZZ};
+		if ( $ENV{GATEWAY_INTERFACE} ) {
+			qx{curl http://172.16.254.2/state.xml?relayState=2&pulseTime=10 2>/dev/null} unless $ENV{NOBUZZ};
+		} else {
+			qx{curl http://172.16.254.2/state.xml?relayState=2 2>/dev/null} unless $ENV{NOBUZZ};
+		}
 		# Error codes?
 		print DATA "Allow: $_\n" if $log;
 	} elsif ( $ok == 2 ) {
