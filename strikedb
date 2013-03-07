@@ -1,0 +1,67 @@
+#!/usr/bin/perl
+
+# Ubuntu /etc/init/tty1.conf
+# exec /sbin/getty -i -n -8 38400 -l /usr/local/bin/strike.pl tty1
+
+# TO DO:
+# Accept multiple prox readers based on a prox prefix
+# Different curl IP for each different prox prefix
+# Expand DB to support multiple readers
+# Allow configuration to use a local sqlite db or a network MySQL DB
+# sqlite version needs the original strike.pl with built in CGI
+
+$|=1;
+use strict;
+use warnings;
+use lib '/home/local/Strike/lib';
+use Term::ReadKey;
+use Date::Manip;
+use Schema;
+use LWP::UserAgent;
+
+Date_Init('WorkDayBeg = 07:00', 'WorkDayEnd = 18:00');
+my $schema = Schema->connect('DBI:mysql:database=door;host=mysql.cogstonestl.com', 'door', 'door');
+
+if ( $ENV{PIN} ) {
+	Strike($ENV{PIN}, $schema->resultset('Door')->find({pin=>$ENV{PIN}}));
+} else {
+	print "Strike: ";
+	ReadMode 2;
+	chomp($ENV{RFID} = <STDIN>) or die "No strike\n";
+	ReadMode 0;
+	Strike($ENV{RFID}, $ENV{RFID} =~ /^PRX/i ? $schema->resultset('Door')->find({sn=>$ENV{RFID}}) : $ENV{RFID});
+}
+
+sub Strike {
+	my ($input, $rs) = @_;
+
+	my ($user_id, $name, $ok, $label, $rfid, $pin);
+	if ( defined $rs ) {
+		($user_id, $name, $ok, $label, $rfid, $pin) = ($rs->user_id, $rs->user->name, $rs->acl, $rs->badge, $rs->sn, $rs->pin);
+	} else {
+		($user_id, $name, $ok) = (undef, "Wrong PIN ($input)", -1);
+	}
+
+	if ( $ENV{PIN} && $pin && $ENV{PIN} ne $pin ) {
+		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Wrong PIN ($ENV{PIN}): $_"});
+	} elsif ( $ok == 1 || ($ok == 2 && Date_IsWorkDay(ParseDate('now'), 1)) ) {  # 7a-6p
+		if ( $ENV{NOBUZZ} ) {
+			$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow: $name"});
+		} else {
+			my $ua = LWP::UserAgent->new;
+			my $req = HTTP::Request->new(GET => 'http://webrelay.cogstonestl.com/state.xml?relayState=2');
+			my $res = $ua->request($req);
+			if ( $res->is_success ) {
+				$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow: $name"});
+			} else {
+				$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow (FAILED): $name"});
+			}
+		}
+	} elsif ( $ok == 2 ) {
+		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny After Hours: $name"});
+	} elsif ( $ok == 0 ) {
+		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny: $name"});
+	} else {
+		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny Unknown Attempt: $name"});
+	}
+}
