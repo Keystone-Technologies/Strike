@@ -18,58 +18,93 @@ use Term::ReadKey;
 use Date::Manip;
 use Schema;
 use LWP::UserAgent;
+use Sys::Syslog qw/:standard :macros/;
 
 Date_Init('WorkDayBeg = 07:00', 'WorkDayEnd = 18:00');
 my $schema = Schema->connect('DBI:mysql:database=door;host=mysql.cogstonestl.com', 'door', 'door');
 
+$ENV{SYSLOG}=1;
+
+openlog($0, 'pid', LOG_LOCAL0);
+
 if ( $ENV{PIN} ) {
-	Strike($ENV{PIN}, $schema->resultset('Door')->find({pin=>$ENV{PIN}}));
+	Strike($ENV{PIN}, $schema->resultset('Door')->search_rs({pin=>$ENV{PIN}}));
 } else {
 	print "Strike: ";
 	ReadMode 2;
 	chomp($ENV{RFID} = <STDIN>) or die "No strike\n";
 	ReadMode 0;
-	Strike($ENV{RFID}, $ENV{RFID} =~ /^PRX/i ? $schema->resultset('Door')->find({sn=>$ENV{RFID}}) : $ENV{RFID});
+	Strike($ENV{RFID}, $ENV{RFID} =~ /^PRX/i ? $schema->resultset('Door')->search_rs({sn=>$ENV{RFID}}) : $ENV{RFID});
 }
 
 sub Strike {
 	my ($input, $rs) = @_;
 
+	$input = '****' if $ENV{PIN};
+
+	local $_ = "Striking $input...";
+	syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+	warn "$_\n" if $ENV{DEBUG};
+
 	my ($user_id, $name, $ok, $label, $rfid, $pin);
 	if ( ref $rs ) {
-		($user_id, $name, $ok, $label, $rfid, $pin) = ($rs->user_id, $rs->user->name, $rs->acl, $rs->badge, $rs->sn, $rs->pin);
+		if ( $rs->count == 1 ) {
+			my $r = $rs->first;
+			($user_id, $name, $ok, $label, $rfid, $pin) = ($r->user_id, $r->user->name, $r->acl, $r->badge, $r->sn, $r->pin);
+		} else {
+			local $_ = "Multiple registrations found ($input)";
+			syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+			warn "$_\n" if $ENV{DEBUG};
+			($user_id, $name, $ok) = (undef, $_, -1);
+		}
 	} else {
-		warn "Wrong PIN ($input)\n" if $ENV{DEBUG};
-		($user_id, $name, $ok) = (undef, "Wrong PIN ($input)", -1);
+		local $_ = "Wrong PIN ($input)";
+		syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+		warn "$_\n" if $ENV{DEBUG};
+		($user_id, $name, $ok) = (undef, $_, -1);
 	}
 
 	if ( $ENV{PIN} && $pin && $ENV{PIN} ne $pin ) {
-		warn "Wrong PIN ($ENV{PIN})\n" if $ENV{DEBUG};
-		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Wrong PIN ($ENV{PIN}): $_"});
+		local $_ = "Wrong PIN ($ENV{PIN})";
+		syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+		warn "$_\n" if $ENV{DEBUG};
+		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>$_});
 	} elsif ( $ok == 1 || ($ok == 2 && Date_IsWorkDay(ParseDate('now'), 1)) ) {  # 7a-6p
 		if ( $ENV{NOBUZZ} ) {
-			warn "Allow: $name\n" if $ENV{DEBUG};
-			$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow: $name"});
+			local $_ = "Allow: $name";
+			syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+			warn "$_\n" if $ENV{DEBUG};
+			$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>$_});
 		} else {
 			my $ua = LWP::UserAgent->new;
 			my $req = HTTP::Request->new(GET => 'http://webrelay.cogstonestl.com/state.xml?relayState=2');
 			my $res = $ua->request($req);
 			if ( $res->is_success ) {
-				warn "Allow: $name\n" if $ENV{DEBUG};
-				$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow: $name"});
+				local $_ = "Allow: $name";
+				syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+				warn "$_\n" if $ENV{DEBUG};
+				$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>$_});
 			} else {
-				warn "Allow (FAILED): $name\n" if $ENV{DEBUG};
-				$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow (FAILED): $name"});
+				local $_ = "Allow (FAILED): $name";
+				syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+				warn "$_\n" if $ENV{DEBUG};
+				$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>$_});
 			}
 		}
 	} elsif ( $ok == 2 ) {
-		warn "Deny After Hours: $name\n" if $ENV{DEBUG};
-		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny After Hours: $name"});
+		local $_ = "Deny After Hours: $name";
+		syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+		warn "$_\n" if $ENV{DEBUG};
+		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>$_});
 	} elsif ( $ok == 0 ) {
-		warn "Deny: $name\n" if $ENV{DEBUG};
-		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny: $name"});
+		local $_ = "Deny: $name";
+		syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+		warn "$_\n" if $ENV{DEBUG};
+		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>$_});
 	} else {
-		warn "Deny Unknown Attempt: $name\n" if $ENV{DEBUG};
-		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny Unknown Attempt: $name"});
+		local $_ = "Deny Unknown Attempt: $name";
+		syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+		warn "$_\n" if $ENV{DEBUG};
+		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>$_});
 	}
 }
