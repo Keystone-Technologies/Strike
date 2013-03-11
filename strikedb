@@ -36,32 +36,40 @@ sub Strike {
 	my ($input, $rs) = @_;
 
 	my ($user_id, $name, $ok, $label, $rfid, $pin);
-	if ( defined $rs ) {
+	if ( ref $rs ) {
 		($user_id, $name, $ok, $label, $rfid, $pin) = ($rs->user_id, $rs->user->name, $rs->acl, $rs->badge, $rs->sn, $rs->pin);
 	} else {
+		warn "Wrong PIN ($input)\n" if $ENV{DEBUG};
 		($user_id, $name, $ok) = (undef, "Wrong PIN ($input)", -1);
 	}
 
 	if ( $ENV{PIN} && $pin && $ENV{PIN} ne $pin ) {
+		warn "Wrong PIN ($ENV{PIN})\n" if $ENV{DEBUG};
 		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Wrong PIN ($ENV{PIN}): $_"});
 	} elsif ( $ok == 1 || ($ok == 2 && Date_IsWorkDay(ParseDate('now'), 1)) ) {  # 7a-6p
 		if ( $ENV{NOBUZZ} ) {
+			warn "Allow: $name\n" if $ENV{DEBUG};
 			$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow: $name"});
 		} else {
 			my $ua = LWP::UserAgent->new;
 			my $req = HTTP::Request->new(GET => 'http://webrelay.cogstonestl.com/state.xml?relayState=2');
 			my $res = $ua->request($req);
 			if ( $res->is_success ) {
+				warn "Allow: $name\n" if $ENV{DEBUG};
 				$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow: $name"});
 			} else {
+				warn "Allow (FAILED): $name\n" if $ENV{DEBUG};
 				$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Allow (FAILED): $name"});
 			}
 		}
 	} elsif ( $ok == 2 ) {
+		warn "Deny After Hours: $name\n" if $ENV{DEBUG};
 		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny After Hours: $name"});
 	} elsif ( $ok == 0 ) {
+		warn "Deny: $name\n" if $ENV{DEBUG};
 		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny: $name"});
 	} else {
+		warn "Deny Unknown Attempt: $name\n" if $ENV{DEBUG};
 		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>"Deny Unknown Attempt: $name"});
 	}
 }
