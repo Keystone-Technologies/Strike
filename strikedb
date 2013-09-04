@@ -46,11 +46,12 @@ sub Strike {
 	syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
 	warn "$_\n" if $ENV{DEBUG};
 
-	my ($user_id, $name, $ok, $label, $rfid, $pin);
+	my ($user_id, $user, $name, $ok, $label, $rfid, $pin);
 	if ( ref $rs ) {
 		if ( $rs->count == 1 ) {
 			my $r = $rs->first;
-			($user_id, $name, $ok, $label, $rfid, $pin) = ($r->user_id, $r->user->name, $r->acl, $r->badge, $r->sn, $r->pin);
+			($user_id, $user, $ok, $label, $rfid, $pin) = ($r->user_id, $r->user, $r->acl, $r->badge, $r->sn, $r->pin);
+			$name = $user->name if $user;
 		} else {
 			local $_ = "Multiple registrations found ($input)";
 			syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
@@ -69,6 +70,10 @@ sub Strike {
 		syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
 		warn "$_\n" if $ENV{DEBUG};
 		$schema->resultset('Log')->create({dt=>\'now()', user_id=>$user_id, message=>$_});
+	} elsif ( not defined $name || $user_id == 0 ) {
+		local $_ = "Found record but not tied to anyone.  You are probably identifying this card to register it to someone.";
+		syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+		warn "$_\n" if $ENV{DEBUG};
 	} elsif ( $ok == 1 || ($ok == 2 && Date_IsWorkDay(ParseDate('now'), 1)) ) {  # 7a-6p
 		if ( $ENV{NOBUZZ} ) {
 			local $_ = "Allow: $name";
