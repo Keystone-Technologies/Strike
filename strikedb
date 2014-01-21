@@ -34,7 +34,7 @@ if ( $ENV{PIN} ) {
 	ReadMode 2;
 	chomp($ENV{RFID} = <STDIN>) or die "No strike\n";
 	ReadMode 0;
-	Strike($ENV{RFID}, $ENV{RFID} =~ /^PRX/i ? $schema->resultset('Door')->search_rs({sn=>$ENV{RFID}}) : $ENV{RFID});
+	Strike($ENV{RFID}, $ENV{RFID} =~ /^PRX/i ? $schema->resultset('Door')->search_rs({user_id=>{'!='=>undef}, sn=>$ENV{RFID}}) : $ENV{RFID});
 }
 
 sub Strike {
@@ -52,6 +52,12 @@ sub Strike {
 			my $r = $rs->first;
 			($user_id, $user, $ok, $label, $rfid, $pin) = ($r->user_id, $r->user, $r->acl, $r->badge, $r->sn, $r->pin);
 			$name = $user->name if $user;
+		} elsif ( $rs->count == 0 ) {
+			local $_ = "No registration found ($input)";
+			syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
+			warn "$_\n" if $ENV{DEBUG};
+			($user_id, $name, $ok) = (undef, $_, -1);
+			$schema->resultset('Door')->search({badge=>{'!='=>undef},sn=>undef}, {rows=>1, order_by=>'badge'})->update({id=>undef, user_id=>undef, acl=>undef, sn=>$input, pin=>undef});
 		} else {
 			local $_ = "Multiple registrations found ($input)";
 			syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
