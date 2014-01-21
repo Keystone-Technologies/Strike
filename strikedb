@@ -53,13 +53,13 @@ sub Strike {
 			($user_id, $user, $ok, $label, $rfid, $pin) = ($r->user_id, $r->user, $r->acl, $r->badge, $r->sn, $r->pin);
 			$name = $user->name if $user;
 		} elsif ( $rs->count == 0 ) {
-			local $_ = "No registration found ($input)";
+			local $_ = "Badge not found, adding ($input)";
 			syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
 			warn "$_\n" if $ENV{DEBUG};
 			($user_id, $name, $ok) = (undef, $_, -1);
 			$schema->resultset('Door')->search({badge=>{'!='=>undef},sn=>undef}, {rows=>1, order_by=>'badge'})->update({id=>undef, user_id=>undef, acl=>undef, sn=>$input, pin=>undef});
 		} else {
-			local $_ = "Multiple registrations found ($input)";
+			local $_ = "Multiple badges found ($input)";
 			syslog(LOG_INFO|LOG_LOCAL0, $_) if $ENV{SYSLOG};
 			warn "$_\n" if $ENV{DEBUG};
 			($user_id, $name, $ok) = (undef, $_, -1);
